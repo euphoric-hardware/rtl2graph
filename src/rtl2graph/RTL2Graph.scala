@@ -43,12 +43,14 @@ object ToGraphPass extends Transform with DependencyAPIMigration {
 
   case class NODE(name: String) extends Primitive
 
-  case class ADD() extends Primitive
+  case class PrimOpPrimitive(op: PrimOp) extends Primitive
+  //kdcase class ADD() extends Primitive
 
   case class Node(tpe: Primitive)
 
   case class Graph(nodes: mutable.Map[Int, Node], edges: mutable.Map[Int, Int])
 
+  /*
   def nodeIdFromName(graph: Graph, name: String): Int = {
     val node: Option[(Int, Node)] = graph.nodes.find { case (id, node) =>
       node.tpe match {
@@ -71,12 +73,14 @@ object ToGraphPass extends Transform with DependencyAPIMigration {
     }
   }
 
+   */
+
   override def execute(state: CircuitState): CircuitState = {
     println(state.circuit.serialize)
 
     val graph = new DefaultDirectedGraph[Primitive, DefaultEdge](classOf[DefaultEdge])
     //val graph = Graph(mutable.Map.empty, mutable.Map.empty)
-    val nodeIdSource = new NodeIdSource
+    //val nodeIdSource = new NodeIdSource
     val circuit = state.circuit
     val nameToVertex = mutable.Map[String, Primitive]()
 
@@ -142,18 +146,18 @@ object ToGraphPass extends Transform with DependencyAPIMigration {
     expression match {
       case DoPrim(op, args: Seq[Expression], consts, tpe) =>
         op match {
-          case Add =>
+          case Add | Sub | Mul =>
             val sourceVertices: Seq[Primitive] = Seq(args(0), args(1)).map {
               case Reference(name, tpe, kind, flow) =>
                 nameToVertex(name)
                 //val nodeId = nodeIdFromName(graph, name)
                 //nodeId
             }
-            val op: Primitive = ADD()
-            graph.addVertex(op)
-            graph.addEdge(sourceVertices(0), op)
-            graph.addEdge(sourceVertices(1), op)
-            op
+            val opVertex: Primitive = PrimOpPrimitive(op)
+            graph.addVertex(opVertex)
+            graph.addEdge(sourceVertices(0), opVertex)
+            graph.addEdge(sourceVertices(1), opVertex)
+            opVertex
 
             //val node = Node(ADD)
             //val thisNodeId = nodeIdSource.newId()
