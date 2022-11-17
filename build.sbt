@@ -23,3 +23,4 @@ lazy val root = (project in file("."))
     Test / scalaSource := baseDirectory.value / "test",
     Test / resourceDirectory := baseDirectory.value / "test" / "resources",
   )
+libraryDependencies += "org.jgrapht" % "jgrapht-core" % "1.5.1"
