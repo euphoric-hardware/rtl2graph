@@ -7,12 +7,15 @@ import firrtl.ir._
 import firrtl.options.Dependency
 import firrtl.transforms.PropagatePresetAnnotations
 import firrtl.{CircuitState, DependencyAPIMigration, Transform, Utils}
+import org.jgrapht.graph.{DefaultDirectedGraph, DefaultEdge}
 // Firrtl IR classes
 import firrtl.ir.{DefModule, Expression, Mux, Statement}
 // Map functions
 import firrtl.Mappers._
 // Scala's mutable collections
 import scala.collection.mutable
+
+import org.jgrapht._
 
 object ToGraphPass extends Transform with DependencyAPIMigration {
   // run on lowered firrtl
@@ -40,7 +43,7 @@ object ToGraphPass extends Transform with DependencyAPIMigration {
 
   case class NODE(name: String) extends Primitive
 
-  object ADD extends Primitive
+  case class ADD() extends Primitive
 
   case class Node(tpe: Primitive)
 
@@ -52,7 +55,7 @@ object ToGraphPass extends Transform with DependencyAPIMigration {
         case PI(n) => n == name
         case PO(n) => n == name
         case NODE(n) => n == name
-        case ADD => false
+        case ADD() => false
       }
     }
     node.get._1
@@ -70,9 +73,12 @@ object ToGraphPass extends Transform with DependencyAPIMigration {
 
   override def execute(state: CircuitState): CircuitState = {
     println(state.circuit.serialize)
-    val graph = Graph(mutable.Map.empty, mutable.Map.empty)
+
+    val graph = new DefaultDirectedGraph[Primitive, DefaultEdge](classOf[DefaultEdge])
+    //val graph = Graph(mutable.Map.empty, mutable.Map.empty)
     val nodeIdSource = new NodeIdSource
     val circuit = state.circuit
+    val nameToVertex = mutable.Map[String, Primitive]()
 
     circuit.foreachModule { m =>
       m.foreachPort { p =>
@@ -81,63 +87,82 @@ object ToGraphPass extends Transform with DependencyAPIMigration {
         } else {
           p.direction match {
             case Input =>
-              graph.nodes.addOne(nodeIdSource.newId() -> Node(PI(p.name)))
+              val vertex = PI(p.name)
+              graph.addVertex(vertex)
+              nameToVertex.addOne(p.name -> vertex)
+                //nodeIdSource.newId() -> Node(PI(p.name)))
             case Output =>
-              graph.nodes.addOne(nodeIdSource.newId() -> Node(PO(p.name)))
+              val vertex = PO(p.name)
+              graph.addVertex(vertex)
+              nameToVertex.addOne(p.name -> vertex)
+              //graph.nodes.addOne(nodeIdSource.newId() -> Node(PO(p.name)))
           }
         }
       }
       m.foreachStmt { stmt =>
-        traverseStatement(stmt, graph, nodeIdSource)
+        traverseStatement(stmt, graph, nameToVertex)
       }
     }
     println(graph)
     state
   }
 
-  def traverseStatement(stmt: Statement, graph: Graph, nodeIdSource: NodeIdSource): Unit = {
+  def traverseStatement(stmt: Statement, graph: DefaultDirectedGraph[Primitive, DefaultEdge], nameToVertex: mutable.Map[String, Primitive]): Unit = {
     println(stmt)
     stmt.foreachStmt {
       case Connect(info, loc, expr) =>
-        val node1 = nodeIdFromName(graph, expr.asInstanceOf[Reference].name)
-        val node2 = nodeIdFromName(graph, loc.asInstanceOf[Reference].name)
-        graph.edges.addOne(node1 -> node2)
-        println(node1, node2)
+        val vertex1 = nameToVertex(expr.asInstanceOf[Reference].name)
+        val vertex2 = nameToVertex(loc.asInstanceOf[Reference].name)
+        graph.addEdge(vertex1, vertex2)
+        //val node1 = nodeIdFromName(graph, expr.asInstanceOf[Reference].name)
+        //val node2 = nodeIdFromName(graph, loc.asInstanceOf[Reference].name)
+        //graph.edges.addOne(node1 -> node2)
+        //println(node1, node2)
         return
       case DefNode(info, name, expr) =>
-        val createdNodeId = traverseExpr(expr, graph, nodeIdSource)
-        val thisNode = Node(NODE(name))
-        val thisNodeId = nodeIdSource.newId()
-        graph.nodes.addOne(thisNodeId -> thisNode)
-        graph.edges.addOne(createdNodeId.get -> thisNodeId)
+        val thisNode = NODE(name)
+        graph.addVertex(thisNode)
+        nameToVertex.addOne(name -> thisNode)
+        val createdVertex = traverseExpr(expr, graph, nameToVertex)
+        graph.addEdge(createdVertex, thisNode)
+        //val thisNodeId = nodeIdSource.newId()
+        //graph.nodes.addOne(thisNodeId -> thisNode)
+        //graph.edges.addOne(createdNodeId.get -> thisNodeId)
       //println(info, name, value)
       case block@Block(stmts) =>
-        traverseStatement(block, graph, nodeIdSource)
+        traverseStatement(block, graph, nameToVertex)
     }
 
     stmt.foreachExpr { expr =>
-      traverseExpr(expr, graph, nodeIdSource)
+      traverseExpr(expr, graph, nameToVertex)
     }
   }
 
-  def traverseExpr(expression: Expression, graph: Graph, nodeIdSource: NodeIdSource): Option[Int] = {
+  def traverseExpr(expression: Expression, graph: DefaultDirectedGraph[Primitive, DefaultEdge], nameToVertex: mutable.Map[String, Primitive]): Primitive = {
     expression match {
       case DoPrim(op, args: Seq[Expression], consts, tpe) =>
         op match {
           case Add =>
-            val nodeArgs = Seq(args(0), args(1)).map {
+            val sourceVertices: Seq[Primitive] = Seq(args(0), args(1)).map {
               case Reference(name, tpe, kind, flow) =>
-                val nodeId = nodeIdFromName(graph, name)
-                nodeId
+                nameToVertex(name)
+                //val nodeId = nodeIdFromName(graph, name)
+                //nodeId
             }
-            val node = Node(ADD)
-            val thisNodeId = nodeIdSource.newId()
-            graph.nodes.addOne(thisNodeId -> node)
-            graph.edges.addAll(Seq(
-              nodeArgs(0) -> thisNodeId,
-              nodeArgs(1) -> thisNodeId
-            ))
-            Some(thisNodeId)
+            val op: Primitive = ADD()
+            graph.addVertex(op)
+            graph.addEdge(sourceVertices(0), op)
+            graph.addEdge(sourceVertices(1), op)
+            op
+
+            //val node = Node(ADD)
+            //val thisNodeId = nodeIdSource.newId()
+            //graph.nodes.addOne(thisNodeId -> node)
+            //graph.edges.addAll(Seq(
+              //nodeArgs(0) -> thisNodeId,
+              //nodeArgs(1) -> thisNodeId
+            //))
+            //Some(thisNodeId)
         }
     }
   }
