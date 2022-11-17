@@ -19,4 +19,21 @@ class RTL2GraphSpec extends AnyFreeSpec with CompilerTest {
   "verify rtl2graph works" in {
     val (str, annos) = compile(new Adder(), "verilog", List(RunFirrtlTransformAnnotation(ToGraphPass)))
   }
+
+  "rtl2graph with firrtl string" in {
+    val firrtlStr =
+      """
+        |circuit Adder :
+        |  module Adder :
+        |    input clock : Clock
+        |    input reset : UInt<1>
+        |    input io_a : UInt<8>
+        |    input io_b : UInt<8>
+        |    output io_c : UInt<9>
+        |
+        |    node _io_c_T = add(io_a, io_b) @[RTL2GraphSpec.scala 16:18]
+        |    io_c <= _io_c_T @[RTL2GraphSpec.scala 16:10]
+        |""".stripMargin
+    val (str, annos) = fromFirrtlString(firrtlStr, List(RunFirrtlTransformAnnotation(ToGraphPass)))
+  }
 }
