@@ -5,6 +5,9 @@ import chisel3._
 import chisel3.util._
 import firrtl.AnnotationSeq
 import firrtl.stage.RunFirrtlTransformAnnotation
+import org.jgrapht.graph.{DefaultDirectedGraph, DefaultEdge}
+import rtl2graph.ToGraphPass.GraphAnnotation
+import rtl2graph.ToGraphPass._
 
 class RTL2GraphSpec extends AnyFreeSpec with CompilerTest {
   class Adder extends Module {
@@ -35,5 +38,20 @@ class RTL2GraphSpec extends AnyFreeSpec with CompilerTest {
         |    io_c <= _io_c_T @[RTL2GraphSpec.scala 16:10]
         |""".stripMargin
     val (str, annos) = fromFirrtlString(firrtlStr, List(RunFirrtlTransformAnnotation(ToGraphPass)))
+    val graph = annos.collectFirst {
+      case c: GraphAnnotation => c
+    }.get.graph
+    val expectedGraph = new DefaultDirectedGraph[NodeType, DefaultEdge](classOf[DefaultEdge])
+    val io_a = PrimaryInput("io_a")
+    val io_b = PrimaryInput("io_b")
+    val io_c = PrimaryOutput("io_c")
+    val _io_c_T = Node("_io_c_T")
+    val adder = PrimOp(firrtl.PrimOps.Add)
+    Seq(io_a, io_b, io_c, _io_c_T, adder).foreach { n => expectedGraph.addVertex(n) }
+    expectedGraph.addEdge(io_a, adder)
+    expectedGraph.addEdge(io_b, adder)
+    expectedGraph.addEdge(adder, _io_c_T)
+    expectedGraph.addEdge(_io_c_T, io_c)
+    assert(graph.toString == expectedGraph.toString)
   }
 }

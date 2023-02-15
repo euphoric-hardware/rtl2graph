@@ -4,7 +4,7 @@ package rtl2graph
 import firrtl.PrimOps._
 import firrtl.annotations.NoTargetAnnotation
 import firrtl.ir._
-import firrtl.options.Dependency
+import firrtl.options.{Dependency, Unserializable}
 import firrtl.transforms.PropagatePresetAnnotations
 import firrtl.{CircuitState, DependencyAPIMigration, Transform, Utils}
 import org.jgrapht.graph.{DefaultDirectedGraph, DefaultEdge}
@@ -17,7 +17,10 @@ import scala.collection.mutable
 
 import org.jgrapht._
 
+
 object ToGraphPass extends Transform with DependencyAPIMigration {
+  case class GraphAnnotation(graph: DefaultDirectedGraph[NodeType, DefaultEdge]) extends NoTargetAnnotation with Unserializable
+
   // run on lowered firrtl
   override def prerequisites = Seq(
     Dependency(firrtl.passes.ExpandWhens),
@@ -35,20 +38,22 @@ object ToGraphPass extends Transform with DependencyAPIMigration {
   // we want to run before the actual Verilog is emitted
   override def optionalPrerequisiteOf = firrtl.stage.Forms.BackendEmitters
 
-  sealed trait Primitive
+  sealed trait NodeType
+  case class PrimaryInput(name: String) extends NodeType {
+    override def equals(obj: Any) = obj.isInstanceOf[PrimaryInput] && obj.asInstanceOf[PrimaryInput].name == this.name
+  }
+  case class PrimaryOutput(name: String) extends NodeType {
+    override def equals(obj: Any) = obj.isInstanceOf[PrimaryOutput] && obj.asInstanceOf[PrimaryOutput].name == this.name
+  }
+  case class Node(name: String) extends NodeType {
+    override def equals(obj: Any) = obj.isInstanceOf[Node] && obj.asInstanceOf[Node].name == this.name
+  }
+  case class PrimOp(op: firrtl.ir.PrimOp) extends NodeType {
+    override def equals(obj: Any) = obj.isInstanceOf[PrimOp] && obj.asInstanceOf[PrimOp].op == this.op
+  }
 
-  case class PI(name: String) extends Primitive
-
-  case class PO(name: String) extends Primitive
-
-  case class NODE(name: String) extends Primitive
-
-  case class PrimOpPrimitive(op: PrimOp) extends Primitive
-  //kdcase class ADD() extends Primitive
-
-  case class Node(tpe: Primitive)
-
-  case class Graph(nodes: mutable.Map[Int, Node], edges: mutable.Map[Int, Int])
+  //case class Node(tpe: Primitive)
+  //case class Graph(nodes: mutable.Map[Int, Node], edges: mutable.Map[Int, Int])
 
   /*
   def nodeIdFromName(graph: Graph, name: String): Int = {
@@ -72,17 +77,16 @@ object ToGraphPass extends Transform with DependencyAPIMigration {
       i
     }
   }
-
    */
 
   override def execute(state: CircuitState): CircuitState = {
-    println(state.circuit.serialize)
+    //println(state.circuit.serialize)
 
-    val graph = new DefaultDirectedGraph[Primitive, DefaultEdge](classOf[DefaultEdge])
+    val graph = new DefaultDirectedGraph[NodeType, DefaultEdge](classOf[DefaultEdge])
     //val graph = Graph(mutable.Map.empty, mutable.Map.empty)
     //val nodeIdSource = new NodeIdSource
     val circuit = state.circuit
-    val nameToVertex = mutable.Map[String, Primitive]()
+    val nameToVertex = mutable.Map[String, NodeType]()
 
     circuit.foreachModule { m =>
       m.foreachPort { p =>
@@ -91,12 +95,12 @@ object ToGraphPass extends Transform with DependencyAPIMigration {
         } else {
           p.direction match {
             case Input =>
-              val vertex = PI(p.name)
+              val vertex = PrimaryInput(p.name)
               graph.addVertex(vertex)
               nameToVertex.addOne(p.name -> vertex)
                 //nodeIdSource.newId() -> Node(PI(p.name)))
             case Output =>
-              val vertex = PO(p.name)
+              val vertex = PrimaryOutput(p.name)
               graph.addVertex(vertex)
               nameToVertex.addOne(p.name -> vertex)
               //graph.nodes.addOne(nodeIdSource.newId() -> Node(PO(p.name)))
@@ -107,12 +111,11 @@ object ToGraphPass extends Transform with DependencyAPIMigration {
         traverseStatement(stmt, graph, nameToVertex)
       }
     }
-    println(graph)
-    state
+    state.copy(annotations = state.annotations :+ GraphAnnotation(graph))
   }
 
-  def traverseStatement(stmt: Statement, graph: DefaultDirectedGraph[Primitive, DefaultEdge], nameToVertex: mutable.Map[String, Primitive]): Unit = {
-    println(stmt)
+  def traverseStatement(stmt: Statement, graph: DefaultDirectedGraph[NodeType, DefaultEdge], nameToVertex: mutable.Map[String, NodeType]): Unit = {
+    //println(stmt)
     stmt.foreachStmt {
       case Connect(info, loc, expr) =>
         val vertex1 = nameToVertex(expr.asInstanceOf[Reference].name)
@@ -124,7 +127,7 @@ object ToGraphPass extends Transform with DependencyAPIMigration {
         //println(node1, node2)
         return
       case DefNode(info, name, expr) =>
-        val thisNode = NODE(name)
+        val thisNode = Node(name)
         graph.addVertex(thisNode)
         nameToVertex.addOne(name -> thisNode)
         val createdVertex = traverseExpr(expr, graph, nameToVertex)
@@ -142,18 +145,18 @@ object ToGraphPass extends Transform with DependencyAPIMigration {
     }
   }
 
-  def traverseExpr(expression: Expression, graph: DefaultDirectedGraph[Primitive, DefaultEdge], nameToVertex: mutable.Map[String, Primitive]): Primitive = {
+  def traverseExpr(expression: Expression, graph: DefaultDirectedGraph[NodeType, DefaultEdge], nameToVertex: mutable.Map[String, NodeType]): NodeType = {
     expression match {
       case DoPrim(op, args: Seq[Expression], consts, tpe) =>
         op match {
           case Add | Sub | Mul =>
-            val sourceVertices: Seq[Primitive] = Seq(args(0), args(1)).map {
+            val sourceVertices: Seq[NodeType] = Seq(args(0), args(1)).map {
               case Reference(name, tpe, kind, flow) =>
                 nameToVertex(name)
                 //val nodeId = nodeIdFromName(graph, name)
                 //nodeId
             }
-            val opVertex: Primitive = PrimOpPrimitive(op)
+            val opVertex: NodeType = PrimOp(op)
             graph.addVertex(opVertex)
             graph.addEdge(sourceVertices(0), opVertex)
             graph.addEdge(sourceVertices(1), opVertex)
