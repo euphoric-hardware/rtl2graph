@@ -15,8 +15,6 @@ import firrtl.Mappers._
 // Scala's mutable collections
 import scala.collection.mutable
 
-import org.jgrapht._
-
 
 object ToGraphPass extends Transform with DependencyAPIMigration {
   case class GraphAnnotation(graph: DefaultDirectedGraph[NodeType, DefaultEdge]) extends NoTargetAnnotation with Unserializable
@@ -39,18 +37,10 @@ object ToGraphPass extends Transform with DependencyAPIMigration {
   override def optionalPrerequisiteOf = firrtl.stage.Forms.BackendEmitters
 
   sealed trait NodeType
-  case class PrimaryInput(name: String) extends NodeType {
-    override def equals(obj: Any) = obj.isInstanceOf[PrimaryInput] && obj.asInstanceOf[PrimaryInput].name == this.name
-  }
-  case class PrimaryOutput(name: String) extends NodeType {
-    override def equals(obj: Any) = obj.isInstanceOf[PrimaryOutput] && obj.asInstanceOf[PrimaryOutput].name == this.name
-  }
-  case class Node(name: String) extends NodeType {
-    override def equals(obj: Any) = obj.isInstanceOf[Node] && obj.asInstanceOf[Node].name == this.name
-  }
-  case class PrimOp(op: firrtl.ir.PrimOp) extends NodeType {
-    override def equals(obj: Any) = obj.isInstanceOf[PrimOp] && obj.asInstanceOf[PrimOp].op == this.op
-  }
+  case class PrimaryInput(name: String) extends NodeType
+  case class PrimaryOutput(name: String) extends NodeType
+  case class Node(name: String) extends NodeType
+  case class PrimOp(op: firrtl.ir.PrimOp) extends NodeType
 
   //case class Node(tpe: Primitive)
   //case class Graph(nodes: mutable.Map[Int, Node], edges: mutable.Map[Int, Int])

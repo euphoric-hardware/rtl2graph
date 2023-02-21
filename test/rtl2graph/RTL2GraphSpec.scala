@@ -53,5 +53,19 @@ class RTL2GraphSpec extends AnyFreeSpec with CompilerTest {
     expectedGraph.addEdge(adder, _io_c_T)
     expectedGraph.addEdge(_io_c_T, io_c)
     assert(graph.toString == expectedGraph.toString)
+    // assert(graph == expectedGraph) // TODO: this fails for some reason
+  }
+
+  "rtl2graph should work with a register" in {
+    class Reg extends Module {
+      val io = IO(new Bundle{
+        val d = Input(Bool())
+        val q = Output(Bool())
+      })
+      val r = Reg(Bool())
+      r := io.d
+      io.q := r
+    }
+    val (str, annos) = compile(new Reg(), "verilog", List(RunFirrtlTransformAnnotation(ToGraphPass)))
   }
 }
