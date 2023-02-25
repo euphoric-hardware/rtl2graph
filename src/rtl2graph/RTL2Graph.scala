@@ -17,7 +17,7 @@ import scala.collection.mutable
 
 
 object ToGraphPass extends Transform with DependencyAPIMigration {
-  case class GraphAnnotation(graph: DefaultDirectedGraph[NodeType, DefaultEdge]) extends NoTargetAnnotation with Unserializable
+  case class GraphAnnotation(graph: DefaultDirectedGraph[NodeType, EdgeType]) extends NoTargetAnnotation with Unserializable
 
   // run on lowered firrtl
   override def prerequisites = Seq(
@@ -43,8 +43,22 @@ object ToGraphPass extends Transform with DependencyAPIMigration {
   case class PrimOp(op: firrtl.ir.PrimOp) extends NodeType
   case class DefReg(name: String) extends NodeType
 
+  class EdgeType extends DefaultEdge {
+    override def toString: String = {
+      this.getDOTLabel
+    }
+    def getDOTLabel: String = {
+      this.getClass.getSimpleName
+    }
+  }
+  case class LeftArgument() extends EdgeType
+  case class RightArgument() extends EdgeType
+  case class LeftParam() extends EdgeType
+  case class RightParam() extends EdgeType
+  case class SelectEdge() extends EdgeType
+
   override def execute(state: CircuitState): CircuitState = {
-    val graph = new DefaultDirectedGraph[NodeType, DefaultEdge](classOf[DefaultEdge])
+    val graph = new DefaultDirectedGraph[NodeType, EdgeType](classOf[EdgeType])
     val circuit = state.circuit
     val nameToVertex = mutable.Map[String, NodeType]()
 
@@ -72,7 +86,7 @@ object ToGraphPass extends Transform with DependencyAPIMigration {
     state.copy(annotations = state.annotations :+ GraphAnnotation(graph))
   }
 
-  def traverseStatement(stmt: Statement, graph: DefaultDirectedGraph[NodeType, DefaultEdge], nameToVertex: mutable.Map[String, NodeType]): Unit = {
+  def traverseStatement(stmt: Statement, graph: DefaultDirectedGraph[NodeType, EdgeType], nameToVertex: mutable.Map[String, NodeType]): Unit = {
     stmt.foreachStmt {
       case Connect(info, loc, expr) =>
         val vertex1 = nameToVertex(expr.asInstanceOf[Reference].name)
@@ -97,7 +111,7 @@ object ToGraphPass extends Transform with DependencyAPIMigration {
     }
   }
 
-  def traverseExpr(expression: Expression, graph: DefaultDirectedGraph[NodeType, DefaultEdge], nameToVertex: mutable.Map[String, NodeType]): NodeType = {
+  def traverseExpr(expression: Expression, graph: DefaultDirectedGraph[NodeType, EdgeType], nameToVertex: mutable.Map[String, NodeType]): NodeType = {
     expression match {
       case DoPrim(op, args: Seq[Expression], consts, tpe) =>
         op match {
@@ -108,8 +122,8 @@ object ToGraphPass extends Transform with DependencyAPIMigration {
             }
             val opVertex: NodeType = PrimOp(op)
             graph.addVertex(opVertex)
-            graph.addEdge(sourceVertices(0), opVertex)
-            graph.addEdge(sourceVertices(1), opVertex)
+            graph.addEdge(sourceVertices(0), opVertex, LeftParam())
+            graph.addEdge(sourceVertices(1), opVertex, RightParam())
             opVertex
         }
     }

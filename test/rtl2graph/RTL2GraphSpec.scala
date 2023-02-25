@@ -19,16 +19,21 @@ import scala.collection.mutable
 class RTL2GraphSpec extends AnyFreeSpec with CompilerTest {
 
 
-  def printGraph[N, E](graph: Graph[N, E]): Unit = {
-    val exporter = new DOTExporter[N, E]()
+  def getGraph[N](graph: Graph[N, EdgeType]): String = {
+    val exporter = new DOTExporter[N, EdgeType]()
     exporter.setVertexAttributeProvider((v) => {
       val map = new util.HashMap[String, Attribute]()
       map.put("label", DefaultAttribute.createAttribute(v.toString))
       map
     })
+    exporter.setEdgeAttributeProvider(e => {
+      val map = new util.HashMap[String, Attribute]()
+      map.put("label", DefaultAttribute.createAttribute(e.getDOTLabel))
+      map
+    })
     val writer = new StringWriter()
     exporter.exportGraph(graph, writer)
-    println(writer.toString)
+    writer.toString
   }
 
   "rtl2graph with adder" in {
@@ -45,18 +50,18 @@ class RTL2GraphSpec extends AnyFreeSpec with CompilerTest {
     val graph = annos.collectFirst {
       case c: GraphAnnotation => c
     }.get.graph
-    val expectedGraph = new DefaultDirectedGraph[NodeType, DefaultEdge](classOf[DefaultEdge])
+    val expectedGraph = new DefaultDirectedGraph[NodeType, EdgeType](classOf[EdgeType])
     val io_a = PrimaryInput("io_a")
     val io_b = PrimaryInput("io_b")
     val io_c = PrimaryOutput("io_c")
     val _io_c_T = Node("_io_c_T")
     val adder = PrimOp(firrtl.PrimOps.Add)
     Seq(io_a, io_b, io_c, _io_c_T, adder).foreach { n => expectedGraph.addVertex(n) }
-    expectedGraph.addEdge(io_a, adder)
-    expectedGraph.addEdge(io_b, adder)
+    expectedGraph.addEdge(io_a, adder, LeftParam())
+    expectedGraph.addEdge(io_b, adder, RightParam())
     expectedGraph.addEdge(adder, _io_c_T)
     expectedGraph.addEdge(_io_c_T, io_c)
-    printGraph(expectedGraph)
+    println(getGraph(graph))
 
     assert(graph.toString == expectedGraph.toString)
     // assert(graph == expectedGraph) // TODO: this fails for some reason
@@ -76,6 +81,6 @@ class RTL2GraphSpec extends AnyFreeSpec with CompilerTest {
     val graph = annos.collectFirst {
       case c: GraphAnnotation => c
     }.get.graph
-    printGraph(graph)
+    println(getGraph(graph))
   }
 }
