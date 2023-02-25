@@ -17,34 +17,31 @@ import java.util
 import scala.collection.mutable
 
 class RTL2GraphSpec extends AnyFreeSpec with CompilerTest {
-  class Adder extends Module {
-    val io = IO(new Bundle {
-      val a = Input(UInt(8.W))
-      val b = Input(UInt(8.W))
-      val c = Output(UInt(9.W))
+
+
+  def printGraph[N, E](graph: Graph[N, E]): Unit = {
+    val exporter = new DOTExporter[N, E]()
+    exporter.setVertexAttributeProvider((v) => {
+      val map = new util.HashMap[String, Attribute]()
+      map.put("label", DefaultAttribute.createAttribute(v.toString))
+      map
     })
-    io.c := io.a +& io.b
+    val writer = new StringWriter()
+    exporter.exportGraph(graph, writer)
+    println(writer.toString)
   }
 
-  "verify rtl2graph works" in {
-    val (str, annos) = compile(new Adder(), "verilog", List(RunFirrtlTransformAnnotation(ToGraphPass)))
-  }
+  "rtl2graph with adder" in {
+    class Adder extends Module {
+      val io = IO(new Bundle {
+        val a = Input(UInt(8.W))
+        val b = Input(UInt(8.W))
+        val c = Output(UInt(9.W))
+      })
+      io.c := io.a +& io.b
+    }
 
-  "rtl2graph with firrtl string" in {
-    val firrtlStr =
-      """
-        |circuit Adder :
-        |  module Adder :
-        |    input clock : Clock
-        |    input reset : UInt<1>
-        |    input io_a : UInt<8>
-        |    input io_b : UInt<8>
-        |    output io_c : UInt<9>
-        |
-        |    node _io_c_T = add(io_a, io_b) @[RTL2GraphSpec.scala 16:18]
-        |    io_c <= _io_c_T @[RTL2GraphSpec.scala 16:10]
-        |""".stripMargin
-    val (str, annos) = fromFirrtlString(firrtlStr, List(RunFirrtlTransformAnnotation(ToGraphPass)))
+    val (_, annos) = compile(new Adder(), "low", List(RunFirrtlTransformAnnotation(ToGraphPass)))
     val graph = annos.collectFirst {
       case c: GraphAnnotation => c
     }.get.graph
@@ -59,16 +56,7 @@ class RTL2GraphSpec extends AnyFreeSpec with CompilerTest {
     expectedGraph.addEdge(io_b, adder)
     expectedGraph.addEdge(adder, _io_c_T)
     expectedGraph.addEdge(_io_c_T, io_c)
-
-    val exporter = new DOTExporter[NodeType, DefaultEdge]()
-    exporter.setVertexAttributeProvider((v) => {
-      val map = new util.HashMap[String, Attribute]()
-      map.put("label", DefaultAttribute.createAttribute(v.toString))
-      map
-    })
-    val writer = new StringWriter()
-    exporter.exportGraph(expectedGraph.asInstanceOf[Graph[NodeType, DefaultEdge]], writer)
-    System.out.println(writer.toString)
+    printGraph(expectedGraph)
 
     assert(graph.toString == expectedGraph.toString)
     // assert(graph == expectedGraph) // TODO: this fails for some reason
@@ -84,6 +72,10 @@ class RTL2GraphSpec extends AnyFreeSpec with CompilerTest {
       r := io.d
       io.q := r
     }
-    val (str, annos) = compile(new Reg(), "verilog", List(RunFirrtlTransformAnnotation(ToGraphPass)))
+    val (str, annos) = compile(new Reg(), "low", List(RunFirrtlTransformAnnotation(ToGraphPass)))
+    val graph = annos.collectFirst {
+      case c: GraphAnnotation => c
+    }.get.graph
+    printGraph(graph)
   }
 }

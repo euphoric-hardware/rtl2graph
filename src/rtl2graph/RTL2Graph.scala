@@ -41,41 +41,10 @@ object ToGraphPass extends Transform with DependencyAPIMigration {
   case class PrimaryOutput(name: String) extends NodeType
   case class Node(name: String) extends NodeType
   case class PrimOp(op: firrtl.ir.PrimOp) extends NodeType
-  case class DefReg(op: firrtl.ir.DefRegister) extends NodeType
-
-  //case class Node(tpe: Primitive)
-  //case class Graph(nodes: mutable.Map[Int, Node], edges: mutable.Map[Int, Int])
-
-  /*
-  def nodeIdFromName(graph: Graph, name: String): Int = {
-    val node: Option[(Int, Node)] = graph.nodes.find { case (id, node) =>
-      node.tpe match {
-        case PI(n) => n == name
-        case PO(n) => n == name
-        case NODE(n) => n == name
-        case ADD() => false
-      }
-    }
-    node.get._1
-  }
-
-  class NodeIdSource {
-    var id = 0
-
-    def newId(): Int = {
-      val i = id
-      id += 1
-      i
-    }
-  }
-   */
+  case class DefReg(name: String) extends NodeType
 
   override def execute(state: CircuitState): CircuitState = {
-    //println(state.circuit.serialize)
-
     val graph = new DefaultDirectedGraph[NodeType, DefaultEdge](classOf[DefaultEdge])
-    //val graph = Graph(mutable.Map.empty, mutable.Map.empty)
-    //val nodeIdSource = new NodeIdSource
     val circuit = state.circuit
     val nameToVertex = mutable.Map[String, NodeType]()
 
@@ -89,12 +58,10 @@ object ToGraphPass extends Transform with DependencyAPIMigration {
               val vertex = PrimaryInput(p.name)
               graph.addVertex(vertex)
               nameToVertex.addOne(p.name -> vertex)
-                //nodeIdSource.newId() -> Node(PI(p.name)))
             case Output =>
               val vertex = PrimaryOutput(p.name)
               graph.addVertex(vertex)
               nameToVertex.addOne(p.name -> vertex)
-              //graph.nodes.addOne(nodeIdSource.newId() -> Node(PO(p.name)))
           }
         }
       }
@@ -106,31 +73,21 @@ object ToGraphPass extends Transform with DependencyAPIMigration {
   }
 
   def traverseStatement(stmt: Statement, graph: DefaultDirectedGraph[NodeType, DefaultEdge], nameToVertex: mutable.Map[String, NodeType]): Unit = {
-    //println(stmt)
     stmt.foreachStmt {
       case Connect(info, loc, expr) =>
         val vertex1 = nameToVertex(expr.asInstanceOf[Reference].name)
         val vertex2 = nameToVertex(loc.asInstanceOf[Reference].name)
         graph.addEdge(vertex1, vertex2)
-        //val node1 = nodeIdFromName(graph, expr.asInstanceOf[Reference].name)
-        //val node2 = nodeIdFromName(graph, loc.asInstanceOf[Reference].name)
-        //graph.edges.addOne(node1 -> node2)
-        //println(node1, node2)
-        return
       case DefNode(info, name, expr) =>
         val thisNode = Node(name)
         graph.addVertex(thisNode)
         nameToVertex.addOne(name -> thisNode)
         val createdVertex = traverseExpr(expr, graph, nameToVertex)
         graph.addEdge(createdVertex, thisNode)
-        //val thisNodeId = nodeIdSource.newId()
-        //graph.nodes.addOne(thisNodeId -> thisNode)
-        //graph.edges.addOne(createdNodeId.get -> thisNodeId)
-      //println(info, name, value)
-      //case DefRegister(info, name, tpe, clock, reset, init) =>
-        //val thisNode = Node(name)
-        //graph.addVertex(thisNode)
-        //nameToVertex.addOne(name -> thisNode)
+      case DefRegister(info, name, tpe, clock, reset, init) =>
+        val thisNode = DefReg(name)
+        graph.addVertex(thisNode)
+        nameToVertex.addOne(name -> thisNode)
       case block@Block(stmts) =>
         traverseStatement(block, graph, nameToVertex)
     }
@@ -148,23 +105,12 @@ object ToGraphPass extends Transform with DependencyAPIMigration {
             val sourceVertices: Seq[NodeType] = Seq(args(0), args(1)).map {
               case Reference(name, tpe, kind, flow) =>
                 nameToVertex(name)
-                //val nodeId = nodeIdFromName(graph, name)
-                //nodeId
             }
             val opVertex: NodeType = PrimOp(op)
             graph.addVertex(opVertex)
             graph.addEdge(sourceVertices(0), opVertex)
             graph.addEdge(sourceVertices(1), opVertex)
             opVertex
-
-            //val node = Node(ADD)
-            //val thisNodeId = nodeIdSource.newId()
-            //graph.nodes.addOne(thisNodeId -> node)
-            //graph.edges.addAll(Seq(
-              //nodeArgs(0) -> thisNodeId,
-              //nodeArgs(1) -> thisNodeId
-            //))
-            //Some(thisNodeId)
         }
     }
   }
