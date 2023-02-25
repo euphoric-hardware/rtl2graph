@@ -41,6 +41,7 @@ object ToGraphPass extends Transform with DependencyAPIMigration {
   case class PrimaryOutput(name: String) extends NodeType
   case class Node(name: String) extends NodeType
   case class PrimOp(op: firrtl.ir.PrimOp) extends NodeType
+  case class DefReg(op: firrtl.ir.DefRegister) extends NodeType
 
   //case class Node(tpe: Primitive)
   //case class Graph(nodes: mutable.Map[Int, Node], edges: mutable.Map[Int, Int])
@@ -126,6 +127,10 @@ object ToGraphPass extends Transform with DependencyAPIMigration {
         //graph.nodes.addOne(thisNodeId -> thisNode)
         //graph.edges.addOne(createdNodeId.get -> thisNodeId)
       //println(info, name, value)
+      //case DefRegister(info, name, tpe, clock, reset, init) =>
+        //val thisNode = Node(name)
+        //graph.addVertex(thisNode)
+        //nameToVertex.addOne(name -> thisNode)
       case block@Block(stmts) =>
         traverseStatement(block, graph, nameToVertex)
     }

@@ -6,8 +6,15 @@ import chisel3.util._
 import firrtl.AnnotationSeq
 import firrtl.stage.RunFirrtlTransformAnnotation
 import org.jgrapht.graph.{DefaultDirectedGraph, DefaultEdge}
+import org.jgrapht.{Graph, io}
+import org.jgrapht.nio.{Attribute, DefaultAttribute}
+import org.jgrapht.nio.dot.DOTExporter
 import rtl2graph.ToGraphPass.GraphAnnotation
 import rtl2graph.ToGraphPass._
+
+import java.io.StringWriter
+import java.util
+import scala.collection.mutable
 
 class RTL2GraphSpec extends AnyFreeSpec with CompilerTest {
   class Adder extends Module {
@@ -52,6 +59,17 @@ class RTL2GraphSpec extends AnyFreeSpec with CompilerTest {
     expectedGraph.addEdge(io_b, adder)
     expectedGraph.addEdge(adder, _io_c_T)
     expectedGraph.addEdge(_io_c_T, io_c)
+
+    val exporter = new DOTExporter[NodeType, DefaultEdge]()
+    exporter.setVertexAttributeProvider((v) => {
+      val map = new util.HashMap[String, Attribute]()
+      map.put("label", DefaultAttribute.createAttribute(v.toString))
+      map
+    })
+    val writer = new StringWriter()
+    exporter.exportGraph(expectedGraph.asInstanceOf[Graph[NodeType, DefaultEdge]], writer)
+    System.out.println(writer.toString)
+
     assert(graph.toString == expectedGraph.toString)
     // assert(graph == expectedGraph) // TODO: this fails for some reason
   }
