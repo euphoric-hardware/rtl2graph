@@ -83,4 +83,21 @@ class RTL2GraphSpec extends AnyFreeSpec with CompilerTest {
     }.get.graph
     println(getGraph(graph))
   }
+
+  // TODO: refactor these tests to remove the duplicate compile calls
+  "rtl2graph should work with an arbiter" in {
+    val (str, annos) = compile(new Arbiter(UInt(8.W), 4), "low", List(RunFirrtlTransformAnnotation(ToGraphPass)))
+    val graph = annos.collectFirst {
+      case c: GraphAnnotation => c
+    }.get.graph
+    println(getGraph(graph))
+  }
+
+  "rtl2graph should work with an queue" in {
+    val (str, annos) = compile(new Queue(UInt(8.W), 4), "low", List(RunFirrtlTransformAnnotation(ToGraphPass)))
+    val graph = annos.collectFirst {
+      case c: GraphAnnotation => c
+    }.get.graph
+    println(getGraph(graph))
+  }
 }
