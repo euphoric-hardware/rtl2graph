@@ -122,8 +122,8 @@ object ToGraphPass extends Transform with DependencyAPIMigration {
             }
             val opVertex: NodeType = PrimOp(op)
             graph.addVertex(opVertex)
-            graph.addEdge(sourceVertices(0), opVertex, LeftParam())
-            graph.addEdge(sourceVertices(1), opVertex, RightParam())
+            graph.addEdge(sourceVertices(0), opVertex, LeftArgument())
+            graph.addEdge(sourceVertices(1), opVertex, RightArgument())
             opVertex
         }
     }
