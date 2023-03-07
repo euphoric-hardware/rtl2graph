@@ -17,7 +17,13 @@ import java.util
 import scala.collection.mutable
 
 class RTL2GraphSpec extends AnyFreeSpec with CompilerTest {
-
+  def getChiselGraph[M <: Module](gen: => M): Graph[NodeType, EdgeType] = {
+    val (firrtl, annos) = compile(gen, "low", List(RunFirrtlTransformAnnotation(ToGraphPass)))
+    println(firrtl)
+    annos.collectFirst {
+      case c: GraphAnnotation => c
+    }.get.graph
+  }
 
   def getGraph[N](graph: Graph[N, EdgeType]): String = {
     val exporter = new DOTExporter[N, EdgeType]()
@@ -36,7 +42,7 @@ class RTL2GraphSpec extends AnyFreeSpec with CompilerTest {
     writer.toString
   }
 
-  "rtl2graph with adder" in {
+  "rtl2graph should work with an adder" in {
     class Adder extends Module {
       val io = IO(new Bundle {
         val a = Input(UInt(8.W))
@@ -46,19 +52,16 @@ class RTL2GraphSpec extends AnyFreeSpec with CompilerTest {
       io.c := io.a +& io.b
     }
 
-    val (_, annos) = compile(new Adder(), "low", List(RunFirrtlTransformAnnotation(ToGraphPass)))
-    val graph = annos.collectFirst {
-      case c: GraphAnnotation => c
-    }.get.graph
+    val graph = getChiselGraph(new Adder())
     val expectedGraph = new DefaultDirectedGraph[NodeType, EdgeType](classOf[EdgeType])
     val io_a = PrimaryInput("io_a")
     val io_b = PrimaryInput("io_b")
     val io_c = PrimaryOutput("io_c")
     val _io_c_T = Node("_io_c_T")
-    val adder = PrimOp(firrtl.PrimOps.Add)
+    val adder = PrimOp("", firrtl.PrimOps.Add)
     Seq(io_a, io_b, io_c, _io_c_T, adder).foreach { n => expectedGraph.addVertex(n) }
-    expectedGraph.addEdge(io_a, adder, LeftParam())
-    expectedGraph.addEdge(io_b, adder, RightParam())
+    expectedGraph.addEdge(io_a, adder, new LeftArgument)
+    expectedGraph.addEdge(io_b, adder, new RightArgument)
     expectedGraph.addEdge(adder, _io_c_T)
     expectedGraph.addEdge(_io_c_T, io_c)
     println(getGraph(graph))
@@ -77,27 +80,18 @@ class RTL2GraphSpec extends AnyFreeSpec with CompilerTest {
       r := io.d
       io.q := r
     }
-    val (str, annos) = compile(new Reg(), "low", List(RunFirrtlTransformAnnotation(ToGraphPass)))
-    val graph = annos.collectFirst {
-      case c: GraphAnnotation => c
-    }.get.graph
+
+    val graph = getChiselGraph(new Reg())
     println(getGraph(graph))
   }
 
-  // TODO: refactor these tests to remove the duplicate compile calls
   "rtl2graph should work with an arbiter" in {
-    val (str, annos) = compile(new Arbiter(UInt(8.W), 4), "low", List(RunFirrtlTransformAnnotation(ToGraphPass)))
-    val graph = annos.collectFirst {
-      case c: GraphAnnotation => c
-    }.get.graph
+    val graph = getChiselGraph(new Arbiter(UInt(8.W), 4))
     println(getGraph(graph))
   }
 
   "rtl2graph should work with an queue" in {
-    val (str, annos) = compile(new Queue(UInt(8.W), 4), "low", List(RunFirrtlTransformAnnotation(ToGraphPass)))
-    val graph = annos.collectFirst {
-      case c: GraphAnnotation => c
-    }.get.graph
+    val graph = getChiselGraph(new Queue(UInt(8.W), 4))
     println(getGraph(graph))
   }
 }
