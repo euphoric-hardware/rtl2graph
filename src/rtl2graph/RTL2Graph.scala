@@ -53,11 +53,13 @@ object ToGraphPass extends Transform with DependencyAPIMigration {
   }
 
   case class DefReg(name: String) extends NodeType
-  case class DefMemory(name:String) extends NodeType
+  case class DefMemory(name:String, writers: Seq[String], readers: Seq[String], readwriters: Seq[String]) extends NodeType
 
   case class Mux(id: String, info: Info, tpe: firrtl.ir.Type) extends NodeType {
     override def toString: String = { "Mux" }
   }
+
+  case class ValidIf(id: String) extends NodeType;
 
   case class UIntLiteral(value: BigInt, width: Width) extends NodeType
 
@@ -89,7 +91,7 @@ object ToGraphPass extends Transform with DependencyAPIMigration {
 
     circuit.foreachModule { m =>
       m.foreachPort { p =>
-        if (p.name == "clock" || p.name == "reset") {
+        if (false) {
 
         } else {
           p.direction match {
@@ -126,8 +128,8 @@ object ToGraphPass extends Transform with DependencyAPIMigration {
         declaration match {
           case _: firrtl.ir.DefRegister =>
             node = DefReg(name)
-          case _: firrtl.ir.DefMemory =>
-            node = DefMemory(name)
+          case dm: firrtl.ir.DefMemory =>
+            node = DefMemory(name, writers = dm.writers, readers = dm.readers, readwriters = dm.readwriters)
           case default =>
             node = Node(name)
         }
@@ -139,13 +141,30 @@ object ToGraphPass extends Transform with DependencyAPIMigration {
     }
   }
 
+  def referenceLikeToReference(ref: firrtl.ir.RefLikeExpression): Reference = {
+    ref match {
+      case ref: Reference =>
+        ref
+      case subField: SubField =>
+        referenceLikeToReference(subField.expr.asInstanceOf[firrtl.ir.RefLikeExpression])
+    }
+  }
+
   // TODO: eliminate global variable
   var curNodeName = "this should never be seen in the output.";
   def traverseStatement(stmt: Statement, graph: DefaultDirectedGraph[NodeType, EdgeType], nameToVertex: mutable.Map[String, NodeType]): Unit = {
     stmt.foreachStmt {
       case Connect(info, loc, expr) =>
-        val vertex1 = nameToVertex(expr.asInstanceOf[Reference].name)
-        val vertex2 = nameToVertex(loc.asInstanceOf[Reference].name)
+        val vertex1 = expr match {
+          case refLike: RefLikeExpression =>
+            nameToVertex(referenceLikeToReference(refLike).name)
+          case expression: Expression =>
+            traverseExpr(expression, graph, nameToVertex, info)
+        }
+        val vertex2 = loc match {
+          case refLikeExpression: RefLikeExpression =>
+            nameToVertex(referenceLikeToReference(refLikeExpression).name)
+        }
         graph.addEdge(vertex1, vertex2)
       case DefNode(info, name, expr) =>
         val thisNode = nameToVertex(name)
@@ -178,7 +197,7 @@ object ToGraphPass extends Transform with DependencyAPIMigration {
     expression match {
       case DoPrim(op, args: Seq[Expression], consts, tpe) =>
         op match {
-          case Add | Sub | Mul | Or | Eq | And =>
+          case Add | Sub | Mul | Or | Eq | And | Neq =>
             val sourceVertices: Seq[NodeType] = Seq(args(0), args(1)).map {
               traverseExpr(_, graph, nameToVertex, stmtInfo)
             }
@@ -194,6 +213,12 @@ object ToGraphPass extends Transform with DependencyAPIMigration {
             graph.addEdge(sourceVertex, opVertex, new LeftArgument())
             opVertex
         }
+      case firrtl.ir.ValidIf(cond, value, tpe) =>
+        val validIfVertex: NodeType = ValidIf(curNodeName)
+        graph.addVertex(validIfVertex)
+        graph.addEdge(validIfVertex, traverseExpr(cond, graph, nameToVertex, stmtInfo))
+        graph.addEdge(validIfVertex, traverseExpr(value, graph, nameToVertex, stmtInfo))
+        validIfVertex
       case Reference(name, tpe, kind, flow) =>
         nameToVertex(name)
       case firrtl.ir.Mux(cond, tval, fval, tpe) =>

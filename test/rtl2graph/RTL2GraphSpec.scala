@@ -92,6 +92,8 @@ class RTL2GraphSpec extends AnyFreeSpec with CompilerTest {
 
   "rtl2graph should work with an queue" in {
     val graph = getChiselGraph(new Queue(UInt(8.W), 4))
+//    val (firrtl, annos) = compile(new Queue(UInt(8.W), 4), "low", List())
+//    println(firrtl)
     println(getGraph(graph))
   }
 }
