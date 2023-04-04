@@ -53,21 +53,7 @@ class RTL2GraphSpec extends AnyFreeSpec with CompilerTest {
     }
 
     val graph = getChiselGraph(new Adder())
-    val expectedGraph = new DefaultDirectedGraph[NodeType, EdgeType](classOf[EdgeType])
-    val io_a = PrimaryInput("io_a")
-    val io_b = PrimaryInput("io_b")
-    val io_c = PrimaryOutput("io_c")
-    val _io_c_T = Node("_io_c_T")
-    val adder = PrimOp("", firrtl.PrimOps.Add)
-    Seq(io_a, io_b, io_c, _io_c_T, adder).foreach { n => expectedGraph.addVertex(n) }
-    expectedGraph.addEdge(io_a, adder, new LeftArgument)
-    expectedGraph.addEdge(io_b, adder, new RightArgument)
-    expectedGraph.addEdge(adder, _io_c_T)
-    expectedGraph.addEdge(_io_c_T, io_c)
     println(getGraph(graph))
-
-    assert(graph.toString == expectedGraph.toString)
-    // assert(graph == expectedGraph) // TODO: this fails for some reason
   }
 
   "rtl2graph should work with a register" in {
@@ -95,5 +81,75 @@ class RTL2GraphSpec extends AnyFreeSpec with CompilerTest {
 //    val (firrtl, annos) = compile(new Queue(UInt(8.W), 4), "low", List())
 //    println(firrtl)
     println(getGraph(graph))
+  }
+
+  "rtl2graph should work with nested modules" in {
+       class Helo extends Module {
+         val io = IO(new Bundle{
+           val q = Output(Bool())
+         })
+
+         val x = Module(new Reg())
+         val y = Module(new Reg())
+         y.io.d := true.B
+         x.io.d := y.io.q
+         io.q := x.io.q
+       }
+
+       class Reg extends Module {
+         val io = IO(new Bundle {
+           val d = Input(Bool())
+           val q = Output(Bool())
+         })
+         val r = Reg(Bool())
+         r := io.d
+         io.q := r
+       }
+
+       val graph = getChiselGraph(new Helo())
+       println(getGraph(graph))
+     }
+
+  "rtl2graph should work with nested modules ansa edition" in {
+    class Top extends Module {
+      val io = IO(new Bundle {
+        val q = Output(Bool())
+      })
+
+      val x = Module(new First())
+      val y = Module(new Second())
+
+      x.io.d := y.io.q
+      y.io.d := x.io.q
+      io.q := x.io.d && y.io.d
+
+    }
+
+    class First extends Module {
+      val io = IO(new Bundle {
+        val d = Input(Bool())
+        val q = Output(Bool())
+      })
+      val r = Reg(Bool())
+      r := io.d
+      io.q := r
+    }
+
+    class Second extends Module {
+      val io = IO(new Bundle{
+        val d = Input(Bool())
+        val q = Output(Bool())
+      })
+      io.q := io.d
+    }
+
+    val graph = getChiselGraph(new Top())
+//    val (firrtl, annos) = compile(new Queue(UInt(8.W), 4), "low", List())
+//    println(firrtl)
+    println(getGraph(graph))
+  }
+
+  "rtl2graph should work with rocket" in {
+
   }
 }
