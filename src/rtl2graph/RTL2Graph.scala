@@ -64,6 +64,7 @@ object ToGraphPass extends Transform with DependencyAPIMigration {
   }
 
   case class ValidIf(id: Identifier) extends NodeType;
+  case class IsInvalid(id: Identifier) extends NodeType;
 
   case class UIntLiteral(id: Identifier, value: BigInt, width: Width) extends NodeType
 
@@ -173,6 +174,16 @@ object ToGraphPass extends Transform with DependencyAPIMigration {
             nameToVertex(Identifier(m.name, referenceLikeToReference(refLikeExpression).name))
         }
         graph.addEdge(vertex1, vertex2)
+      case firrtl.ir.IsInvalid(info, expr) =>
+        val vertex1 = expr match {
+          case refLike: RefLikeExpression =>
+            nameToVertex(Identifier(m.name, referenceLikeToReference(refLike).name))
+          case expression: Expression =>
+            traverseExpr(m, expression, graph, nameToVertex, info)
+        }
+        val vertex2 = IsInvalid(Identifier(m.name, vertex1.id.name))
+        graph.addVertex(vertex2)
+        graph.addEdge(vertex1, vertex2)
       case DefNode(info, name, expr) =>
         val thisNode = nameToVertex(Identifier(m.name, name))
         curNodeName = name
@@ -204,7 +215,7 @@ object ToGraphPass extends Transform with DependencyAPIMigration {
     expression match {
       case DoPrim(op, args: Seq[Expression], consts, tpe) =>
         op match {
-          case Add | Sub | Mul | Or | Eq | And | Neq =>
+          case Add | Sub | Div | Mul | Or | And | Xor | Eq | Neq | Cat | Leq | Dshr | Dshl | Lt | Gt | Geq | Eq | Neq | Rem =>
             val sourceVertices: Seq[NodeType] = Seq(args(0), args(1)).map {
               traverseExpr(m, _, graph, nameToVertex, stmtInfo)
             }
@@ -213,7 +224,7 @@ object ToGraphPass extends Transform with DependencyAPIMigration {
             graph.addEdge(sourceVertices(0), opVertex, new LeftArgument())
             graph.addEdge(sourceVertices(1), opVertex, new RightArgument())
             opVertex
-          case Tail =>
+          case Tail | Bits | Andr | Orr | Xorr | Not | AsUInt | Neg | Cvt | Shr | Shl | AsAsyncReset | AsClock | AsFixedPoint | AsSInt | Pad =>
             val sourceVertex: NodeType = traverseExpr(m, args.head, graph, nameToVertex, stmtInfo)
             val opVertex: NodeType = PrimOp(Identifier(m.name, curNodeName), op)
             graph.addVertex(opVertex)

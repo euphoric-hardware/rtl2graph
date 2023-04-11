@@ -12,9 +12,10 @@ import org.jgrapht.nio.dot.DOTExporter
 import rtl2graph.ToGraphPass.GraphAnnotation
 import rtl2graph.ToGraphPass._
 
-import java.io.StringWriter
+import java.io.{File, PrintWriter, StringWriter}
 import java.util
 import scala.collection.mutable
+import scala.io.Source
 
 class RTL2GraphSpec extends AnyFreeSpec with CompilerTest {
   def getChiselGraph[M <: Module](gen: => M): Graph[NodeType, EdgeType] = {
@@ -150,6 +151,15 @@ class RTL2GraphSpec extends AnyFreeSpec with CompilerTest {
   }
 
   "rtl2graph should work with rocket" in {
-
+    val firrtlStr = Source.fromFile("rocketchip.fir").mkString
+//    println(firrtlStr)
+    val (str, annos) = fromFirrtlString(firrtlStr, List(RunFirrtlTransformAnnotation(ToGraphPass)))
+    val graph = annos.collectFirst {
+      case c: GraphAnnotation => c
+    }.get.graph
+    val dot = getGraph(graph)
+    val pw = new PrintWriter(new File("/Users/njha/Downloads/rocket.dot"))
+    pw.write(dot)
+    pw.close
   }
 }
