@@ -25,3 +25,5 @@ lazy val root = (project in file("."))
   )
 libraryDependencies += "org.jgrapht" % "jgrapht-core" % "1.5.1"
 libraryDependencies += "org.jgrapht" % "jgrapht-io" % "1.5.1"
+
+logLevel := Level.Error 

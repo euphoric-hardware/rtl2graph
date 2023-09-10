@@ -1,7 +1,6 @@
 package rtl2graph
 
 // Compiler Infrastructure
-
 import firrtl.PrimOps._
 import firrtl.annotations.NoTargetAnnotation
 import firrtl.ir._
@@ -19,11 +18,11 @@ import firrtl.Mappers._
 // Scala's mutable collections
 import scala.collection.mutable
 
-
+// define Graph Extraction Pass
 object ToGraphPass extends Transform with DependencyAPIMigration {
   case class GraphAnnotation(graph: DefaultDirectedGraph[NodeType, EdgeType]) extends NoTargetAnnotation with Unserializable
 
-  // run on lowered firrtl
+  // prereqs: run on lowered firrtl
   override def prerequisites = Seq(
     Dependency(firrtl.passes.ExpandWhens),
     Dependency(firrtl.passes.LowerTypes),
@@ -42,32 +41,32 @@ object ToGraphPass extends Transform with DependencyAPIMigration {
 
   case class Identifier(module: String, name: String)
 
+  // Define Node types
   sealed trait NodeType {
     val id: Identifier
+    val info: Info
 
     override def toString: String = {
-      id.toString
+      id.toString + ";" + info.toString
     }
   }
-  case class PrimaryInput(id: Identifier) extends NodeType
-  case class PrimaryOutput(id: Identifier) extends NodeType
-  case class Node(id: Identifier) extends NodeType
-  case class PrimOp(id: Identifier, op: firrtl.ir.PrimOp) extends NodeType {
+  case class PrimaryInput(id: Identifier, info: Info) extends NodeType
+  case class PrimaryOutput(id: Identifier, info: Info) extends NodeType
+  case class Node(id: Identifier, info: Info) extends NodeType
+  case class PrimOp(id: Identifier,  info: Info, op: firrtl.ir.PrimOp) extends NodeType {
     override def toString: String = { op.toString }
   }
-
-  case class DefReg(id: Identifier) extends NodeType
-  case class DefMemory(id: Identifier, writers: Seq[String], readers: Seq[String], readwriters: Seq[String]) extends NodeType
-
+  case class DefReg(id: Identifier,  info: Info) extends NodeType
+  case class DefMemory(id: Identifier,  info: Info, writers: Seq[String], readers: Seq[String], readwriters: Seq[String]) extends NodeType
   case class Mux(id: Identifier, info: Info, tpe: firrtl.ir.Type) extends NodeType {
     override def toString: String = { "Mux" }
   }
+  case class ValidIf(id: Identifier,  info: Info) extends NodeType;
+  case class IsInvalid(id: Identifier,  info: Info) extends NodeType;
+  case class UIntLiteral(id: Identifier,  info: Info, value: BigInt, width: Width) extends NodeType
+  case class SIntLiteral(id: Identifier,  info: Info, value: BigInt, width: Width) extends NodeType
 
-  case class ValidIf(id: Identifier) extends NodeType;
-  case class IsInvalid(id: Identifier) extends NodeType;
-
-  case class UIntLiteral(id: Identifier, value: BigInt, width: Width) extends NodeType
-
+  // Define Edge types
   class EdgeType extends DefaultEdge {
     override def toString: String = {
       this.getDOTLabel
@@ -77,47 +76,57 @@ object ToGraphPass extends Transform with DependencyAPIMigration {
       this.getClass.getSimpleName
     }
   }
-
+  // class LeftArgument() extends EdgeType
+  // class RightArgument() extends EdgeType
+  // case class LeftParam() extends EdgeType
+  // case class RightParam() extends EdgeType
+  // case class SelectEdge() extends EdgeType
   class LeftArgument() extends EdgeType
-
   class RightArgument() extends EdgeType
-
-  case class LeftParam() extends EdgeType
-
-  case class RightParam() extends EdgeType
-
-  case class SelectEdge() extends EdgeType
-
+  class ConditionEdge() extends EdgeType
+  class TValEdge() extends EdgeType
+  class FValEdge() extends EdgeType
+  // 
   override def execute(state: CircuitState): CircuitState = {
     val graph = new DefaultDirectedGraph[NodeType, EdgeType](classOf[EdgeType])
     val circuit = state.circuit
     // TODO: Are names unique across modules? If not, this will break.
     val nameToVertex = mutable.Map[Identifier, NodeType]()
+    var annotations = state.annotations
 
+    // first pass = build module hierarchy
+    // second pass = find which graphs belong to which in hierarchy
     circuit.foreachModule { m =>
+      val subGraph = new DefaultDirectedGraph[NodeType, EdgeType](classOf[EdgeType])
       m.foreachPort { p =>
         if (false) {
 
         } else {
           val id = Identifier(m.name, p.name)
+          println(p.info)
           p.direction match {
             case Input =>
-              val vertex = PrimaryInput(id)
+              val vertex = PrimaryInput(id, p.info)
               graph.addVertex(vertex)
+              subGraph.addVertex(vertex)
               nameToVertex.addOne(id -> vertex)
             case Output =>
-              val vertex = PrimaryOutput(id)
+              val vertex = PrimaryOutput(id, p.info)
               graph.addVertex(vertex)
+              subGraph.addVertex(vertex)
               nameToVertex.addOne(id -> vertex)
           }
         }
       }
       firstModulePass(m, graph, nameToVertex)
+      firstModulePass(m, subGraph, nameToVertex)
       m.foreachStmt { stmt =>
         traverseStatement(m, stmt, graph, nameToVertex)
+        traverseStatement(m, stmt, subGraph, nameToVertex)
       }
+      annotations = annotations :+ GraphAnnotation(subGraph)
     }
-    state.copy(annotations = state.annotations :+ GraphAnnotation(graph))
+    state.copy(annotations = annotations :+ GraphAnnotation(graph))
   }
 
   def firstModulePass(m: DefModule, graph: DefaultDirectedGraph[NodeType, EdgeType], nameToVertex: mutable.Map[Identifier, NodeType]): Unit = {
@@ -130,16 +139,16 @@ object ToGraphPass extends Transform with DependencyAPIMigration {
     stmt.foreachStmt {
       case declaration: IsDeclaration =>
         val id = Identifier(m.name, declaration.name)
-        var node: NodeType = Node(id)
+        var node: NodeType = Node(id, declaration.info)
         declaration match {
           case _: firrtl.ir.DefRegister =>
-            node = DefReg(id)
+            node = DefReg(id, declaration.info)
           case dMem: firrtl.ir.DefMemory =>
-            node = DefMemory(id, writers = dMem.writers, readers = dMem.readers, readwriters = dMem.readwriters)
+            node = DefMemory(id, declaration.info, writers = dMem.writers, readers = dMem.readers, readwriters = dMem.readwriters)
           case dMod: firrtl.ir.DefModule =>
             // TODO
           case default =>
-            node = Node(id)
+            node = Node(id, declaration.info)
         }
         graph.addVertex(node)
         nameToVertex.addOne(id -> node)
@@ -181,7 +190,7 @@ object ToGraphPass extends Transform with DependencyAPIMigration {
           case expression: Expression =>
             traverseExpr(m, expression, graph, nameToVertex, info)
         }
-        val vertex2 = IsInvalid(Identifier(m.name, vertex1.id.name))
+        val vertex2 = IsInvalid(Identifier(m.name, vertex1.id.name), info)
         graph.addVertex(vertex2)
         graph.addEdge(vertex1, vertex2)
       case DefNode(info, name, expr) =>
@@ -219,20 +228,20 @@ object ToGraphPass extends Transform with DependencyAPIMigration {
             val sourceVertices: Seq[NodeType] = Seq(args(0), args(1)).map {
               traverseExpr(m, _, graph, nameToVertex, stmtInfo)
             }
-            val opVertex: NodeType = PrimOp(Identifier(m.name, curNodeName), op)
+            val opVertex: NodeType = PrimOp(Identifier(m.name, curNodeName), stmtInfo, op)
             graph.addVertex(opVertex)
             graph.addEdge(sourceVertices(0), opVertex, new LeftArgument())
             graph.addEdge(sourceVertices(1), opVertex, new RightArgument())
             opVertex
           case Tail | Bits | Andr | Orr | Xorr | Not | AsUInt | Neg | Cvt | Shr | Shl | AsAsyncReset | AsClock | AsFixedPoint | AsSInt | Pad =>
             val sourceVertex: NodeType = traverseExpr(m, args.head, graph, nameToVertex, stmtInfo)
-            val opVertex: NodeType = PrimOp(Identifier(m.name, curNodeName), op)
+            val opVertex: NodeType = PrimOp(Identifier(m.name, curNodeName),stmtInfo, op)
             graph.addVertex(opVertex)
             graph.addEdge(sourceVertex, opVertex, new LeftArgument())
             opVertex
         }
       case firrtl.ir.ValidIf(cond, value, tpe) =>
-        val validIfVertex: NodeType = ValidIf(Identifier(m.name, curNodeName))
+        val validIfVertex: NodeType = ValidIf(Identifier(m.name, curNodeName), stmtInfo)
         graph.addVertex(validIfVertex)
         graph.addEdge(validIfVertex, traverseExpr(m, cond, graph, nameToVertex, stmtInfo))
         graph.addEdge(validIfVertex, traverseExpr(m, value, graph, nameToVertex, stmtInfo))
@@ -250,7 +259,11 @@ object ToGraphPass extends Transform with DependencyAPIMigration {
         graph.addEdge(fvalVertex, muxVertex)
         muxVertex
       case firrtl.ir.UIntLiteral(value, width) =>
-        val literalVertex = UIntLiteral(Identifier(m.name, "hi vignesh"), value, width)
+        val literalVertex = UIntLiteral(Identifier(m.name, value.toString + width.toString), stmtInfo,  value, width)
+        graph.addVertex(literalVertex)
+        literalVertex
+      case firrtl.ir.SIntLiteral(value, width) =>
+        val literalVertex = SIntLiteral(Identifier(m.name, value.toString + width.toString), stmtInfo,  value, width)
         graph.addVertex(literalVertex)
         literalVertex
     }

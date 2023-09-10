@@ -55,6 +55,6 @@ trait CompilerTest extends ChiselScalatestTester { this: TestSuite =>
       case EmittedVerilogModuleAnnotation(a) => a
     }.map(_.value).mkString("")
 
-    (src, r)
+    (src, r) // return run_dir here to pass to ToGraphPass
   }
 }
